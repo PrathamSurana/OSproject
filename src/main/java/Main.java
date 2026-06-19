@@ -16,17 +16,28 @@ public class Main {
                 continue;
             }
 
-            String[] commands = input.split(" ");
-            String command = commands[0];
+            List<String> parsedArgs = parseArguments(input);
+            if (parsedArgs.isEmpty()) {
+                continue;
+            }
+
+            String command = parsedArgs.get(0);
 
             if (command.equals("exit")) {
                 break;
             } else if (command.equals("echo")) {
-                System.out.println(input.substring(5));
+                StringBuilder sb = new StringBuilder();
+                for (int i = 1; i < parsedArgs.size(); i++) {
+                    sb.append(parsedArgs.get(i));
+                    if (i < parsedArgs.size() - 1) {
+                        sb.append(" ");
+                    }
+                }
+                System.out.println(sb.toString());
             } else if (command.equals("pwd")) {
                 System.out.println(System.getProperty("user.dir"));
             } else if (command.equals("cd")) {
-                String path = commands[1];
+                String path = parsedArgs.size() > 1 ? parsedArgs.get(1) : "~";
                 File dir;
                 
                 if (path.equals("~")) {
@@ -43,7 +54,7 @@ public class Main {
                     System.out.println("cd: " + path + ": No such file or directory");
                 }
             } else if (command.equals("type")) {
-                String arg = commands[1];
+                String arg = parsedArgs.get(1);
                 if (arg.equals("echo") || arg.equals("exit") || arg.equals("type") || arg.equals("pwd") || arg.equals("cd")) {
                     System.out.println(arg + " is a shell builtin");
                 } else {
@@ -57,21 +68,45 @@ public class Main {
             } else {
                 String executablePath = getPath(command);
                 if (executablePath != null) {
-                    List<String> commandList = new ArrayList<>();
-                    commandList.add(command); 
-                    for (int i = 1; i < commands.length; i++) {
-                        commandList.add(commands[i]);
-                    }
-
-                    ProcessBuilder pb = new ProcessBuilder(commandList);
+                    ProcessBuilder pb = new ProcessBuilder(parsedArgs);
                     pb.inheritIO();
                     Process process = pb.start();
                     process.waitFor();
                 } else {
-                    System.out.println(input + ": command not found");
+                    System.out.println(command + ": command not found");
                 }
             }
         }
+    }
+
+    private static List<String> parseArguments(String input) {
+        List<String> args = new ArrayList<>();
+        StringBuilder currentArg = new StringBuilder();
+        boolean inSingleQuotes = false;
+        boolean hasContent = false;
+
+        for (int i = 0; i < input.length(); i++) {
+            char c = input.charAt(i);
+
+            if (c == '\'') {
+                inSingleQuotes = !inSingleQuotes;
+                hasContent = true; // Handles empty quotes ''
+            } else if (c == ' ' && !inSingleQuotes) {
+                if (currentArg.length() > 0 || hasContent) {
+                    args.add(currentArg.toString());
+                    currentArg.setLength(0);
+                    hasContent = false;
+                }
+            } else {
+                currentArg.append(c);
+            }
+        }
+
+        if (currentArg.length() > 0 || hasContent) {
+            args.add(currentArg.toString());
+        }
+
+        return args;
     }
 
     private static String getPath(String command) {
