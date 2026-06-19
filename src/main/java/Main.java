@@ -128,82 +128,83 @@ public class Main {
                     pipelineStages.add(currentStage);
                 }
 
-                byte[] currentInputData = null;
-                boolean commandFailed = false;
+                // Wrapped pipeline execution in a safe block to guarantee stream restoration
+                try {
+                    byte[] currentInputData = null;
 
-                for (int i = 0; i < pipelineStages.size(); i++) {
-                    List<String> stageArgs = pipelineStages.get(i);
-                    String cmd = stageArgs.get(0);
-                    boolean isLast = (i == pipelineStages.size() - 1);
+                    for (int i = 0; i < pipelineStages.size(); i++) {
+                        List<String> stageArgs = pipelineStages.get(i);
+                        String cmd = stageArgs.get(0);
+                        boolean isLast = (i == pipelineStages.size() - 1);
 
-                    // Setup output capturing if not the last stage
-                    ByteArrayOutputStream stageOutputBuffer = new ByteArrayOutputStream();
-                    if (!isLast) {
-                        System.setOut(new PrintStream(stageOutputBuffer));
-                    } else {
-                        System.setOut(originalOut);
-                    }
-
-                    if (isBuiltin(cmd)) {
-                        // Feed input from previous stage into System.in if data exists
-                        if (currentInputData != null) {
-                            System.setIn(new ByteArrayInputStream(currentInputData));
-                        } else {
-                            System.setIn(originalIn);
-                        }
-
-                        executeBuiltin(stageArgs, backgroundJobs, originalOut);
-                        System.out.flush();
-                    } else {
-                        String path = getPath(cmd);
-                        if (path == null) {
-                            System.setOut(originalOut);
-                            System.err.println(cmd + ": command not found");
-                            commandFailed = true;
-                            break;
-                        }
-
-                        ProcessBuilder pb = new ProcessBuilder(stageArgs);
-                        if (isLast) {
-                            pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
-                        } else {
-                            pb.redirectOutput(ProcessBuilder.Redirect.PIPE);
-                        }
-                        pb.redirectError(ProcessBuilder.Redirect.INHERIT);
-
-                        if (currentInputData != null) {
-                            pb.redirectInput(ProcessBuilder.Redirect.PIPE);
-                        } else {
-                            pb.redirectInput(ProcessBuilder.Redirect.INHERIT);
-                        }
-
-                        Process p = pb.start();
-
-                        // Write input data from previous pipeline link if applicable
-                        if (currentInputData != null) {
-                            p.getOutputStream().write(currentInputData);
-                            p.getOutputStream().flush();
-                            p.getOutputStream().close();
-                        }
-
+                        // Setup output capturing if not the last stage
+                        ByteArrayOutputStream stageOutputBuffer = new ByteArrayOutputStream();
                         if (!isLast) {
-                            p.getInputStream().transferTo(stageOutputBuffer);
+                            System.setOut(new PrintStream(stageOutputBuffer));
+                        } else {
+                            System.setOut(originalOut);
                         }
 
-                        if (!isBackground || isLast) {
-                            p.waitFor();
+                        if (isBuiltin(cmd)) {
+                            // Feed input from previous stage into System.in if data exists
+                            if (currentInputData != null) {
+                                System.setIn(new ByteArrayInputStream(currentInputData));
+                            } else {
+                                System.setIn(originalIn);
+                            }
+
+                            executeBuiltin(stageArgs, backgroundJobs, originalOut);
+                            System.out.flush();
+                        } else {
+                            String path = getPath(cmd);
+                            if (path == null) {
+                                System.setOut(originalOut);
+                                System.err.println(cmd + ": command not found");
+                                break;
+                            }
+
+                            ProcessBuilder pb = new ProcessBuilder(stageArgs);
+                            if (isLast) {
+                                pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+                            } else {
+                                pb.redirectOutput(ProcessBuilder.Redirect.PIPE);
+                            }
+                            pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+
+                            if (currentInputData != null) {
+                                pb.redirectInput(ProcessBuilder.Redirect.PIPE);
+                            } else {
+                                pb.redirectInput(ProcessBuilder.Redirect.INHERIT);
+                            }
+
+                            Process p = pb.start();
+
+                            // Write input data from previous pipeline link if applicable
+                            if (currentInputData != null) {
+                                p.getOutputStream().write(currentInputData);
+                                p.getOutputStream().flush();
+                                p.getOutputStream().close();
+                            }
+
+                            if (!isLast) {
+                                p.getInputStream().transferTo(stageOutputBuffer);
+                            }
+
+                            if (!isBackground || isLast) {
+                                p.waitFor();
+                            }
+                        }
+
+                        // Save output to become the input for the next command segment
+                        if (!isLast) {
+                            currentInputData = stageOutputBuffer.toByteArray();
                         }
                     }
-
-                    // Save output to become the input for the next command segment
-                    if (!isLast) {
-                        currentInputData = stageOutputBuffer.toByteArray();
-                    }
+                } finally {
+                    // Always guarantee streams revert clean back to terminal context
+                    System.setOut(originalOut);
+                    System.setIn(originalIn);
                 }
-
-                // Restore global streams
-                System.setOut(originalOut);
-                System.setIn(originalIn);
                 continue;
             }
 
