@@ -89,7 +89,14 @@ public class Main {
         for (int i = 0; i < input.length(); i++) {
             char c = input.charAt(i);
 
-            if (c == '\'' && !inDoubleQuotes) {
+            if (c == '\\' && !inSingleQuotes && !inDoubleQuotes) {
+                // If there's a next character, treat it as a literal character
+                if (i + 1 < input.length()) {
+                    currentArg.append(input.charAt(i + 1));
+                    i++; // Skip the escaped character in the next iteration
+                    hasContent = true;
+                }
+            } else if (c == '\'' && !inDoubleQuotes) {
                 inSingleQuotes = !inSingleQuotes;
                 hasContent = true;
             } else if (c == '"' && !inSingleQuotes) {
