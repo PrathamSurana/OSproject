@@ -1,6 +1,8 @@
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -28,12 +30,14 @@ public class Main {
         Scanner scanner = new Scanner(System.in);
         PrintStream originalOut = System.out;
         PrintStream originalErr = System.err;
+        InputStream originalIn = System.in;
         
         List<Job> backgroundJobs = new ArrayList<>();
 
         while (true) {
             System.setOut(originalOut);
             System.setErr(originalErr);
+            System.setIn(originalIn);
 
             // 1. Check for any finished jobs right before displaying the prompt
             for (Job job : backgroundJobs) {
@@ -153,7 +157,7 @@ public class Main {
                     continue;
                 }
 
-                // If built-ins are involved, capture first stage output to memory bridge
+                // Memory buffer to bridge pipelines involving built-ins
                 ByteArrayOutputStream pipeBuffer = new ByteArrayOutputStream();
                 PrintStream pipeOut = new PrintStream(pipeBuffer);
                 System.setOut(pipeOut);
@@ -179,12 +183,18 @@ public class Main {
                 pipeOut.flush();
                 byte[] pipeData = pipeBuffer.toByteArray();
 
-                // Reset System output back to normal before executing command 2
+                // Reset output stream back to normal
                 System.setOut(originalOut);
 
                 // Execute Command 2
                 if (isCmd2Builtin) {
+                    // Temporarily feed the captured stream into System.in in case the built-in evaluates stdin
+                    ByteArrayInputStream pipeIn = new ByteArrayInputStream(pipeData);
+                    System.setIn(pipeIn);
+                    
                     executeBuiltin(secondCommandArgs, backgroundJobs, originalOut);
+                    
+                    System.setIn(originalIn);
                 } else {
                     String path2 = getPath(cmd2);
                     if (path2 != null) {
@@ -386,7 +396,6 @@ public class Main {
             String path = commandArgs.size() > 1 ? commandArgs.get(1) : "~";
             File dir;
             
-            // Fixed variable initialization paths here
             if (path.equals("~")) {
                 dir = new File(System.getenv("HOME"));
             } else if (path.startsWith("/")) {
