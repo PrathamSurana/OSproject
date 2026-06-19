@@ -10,6 +10,7 @@ public class Main {
         Scanner scanner = new Scanner(System.in);
         PrintStream originalOut = System.out;
         PrintStream originalErr = System.err;
+        int jobCounter = 1;
 
         while (true) {
             System.setOut(originalOut);
@@ -23,6 +24,17 @@ public class Main {
             }
 
             List<String> parsedArgs = parseArguments(input);
+            if (parsedArgs.isEmpty()) {
+                continue;
+            }
+
+            // Check if it's a background job
+            boolean isBackground = false;
+            if (parsedArgs.get(parsedArgs.size() - 1).equals("&")) {
+                isBackground = true;
+                parsedArgs.remove(parsedArgs.size() - 1);
+            }
+
             if (parsedArgs.isEmpty()) {
                 continue;
             }
@@ -110,7 +122,7 @@ public class Main {
             } else if (command.equals("pwd")) {
                 System.out.println(System.getProperty("user.dir"));
             } else if (command.equals("jobs")) {
-                // Register jobs builtin with an empty implementation for now
+                // Empty implementation for now
             } else if (command.equals("cd")) {
                 String path = commandArgs.size() > 1 ? commandArgs.get(1) : "~";
                 File dir;
@@ -164,8 +176,16 @@ public class Main {
                     } else {
                         pb.inheritIO();
                     }
+                    
                     Process process = pb.start();
-                    process.waitFor();
+                    
+                    if (isBackground) {
+                        System.setOut(originalOut);
+                        System.out.println("[" + jobCounter + "] " + process.pid());
+                        jobCounter++;
+                    } else {
+                        process.waitFor();
+                    }
                 } else {
                     System.setOut(originalOut);
                     System.err.println(command + ": command not found");
