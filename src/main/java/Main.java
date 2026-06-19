@@ -89,13 +89,28 @@ public class Main {
         for (int i = 0; i < input.length(); i++) {
             char c = input.charAt(i);
 
-            if (c == '\\' && !inSingleQuotes && !inDoubleQuotes) {
-                // If there's a next character, treat it as a literal character
-                if (i + 1 < input.length()) {
-                    currentArg.append(input.charAt(i + 1));
-                    i++; // Skip the escaped character in the next iteration
-                    hasContent = true;
+            if (c == '\\' && !inSingleQuotes) {
+                if (inDoubleQuotes) {
+                    // Inside double quotes, only escape specific characters
+                    if (i + 1 < input.length()) {
+                        char nextChar = input.charAt(i + 1);
+                        if (nextChar == '"' || nextChar == '\\' || nextChar == '$' || nextChar == '`') {
+                            currentArg.append(nextChar);
+                            i++;
+                        } else {
+                            currentArg.append(c);
+                        }
+                    } else {
+                        currentArg.append(c);
+                    }
+                } else {
+                    // Outside quotes, always escape the next character
+                    if (i + 1 < input.length()) {
+                        currentArg.append(input.charAt(i + 1));
+                        i++;
+                    }
                 }
+                hasContent = true;
             } else if (c == '\'' && !inDoubleQuotes) {
                 inSingleQuotes = !inSingleQuotes;
                 hasContent = true;
