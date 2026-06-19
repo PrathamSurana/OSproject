@@ -29,7 +29,6 @@ public class Main {
         PrintStream originalErr = System.err;
         
         List<Job> backgroundJobs = new ArrayList<>();
-        int jobCounter = 1;
 
         while (true) {
             System.setOut(originalOut);
@@ -54,7 +53,6 @@ public class Main {
                         marker = "-";
                     }
                     String statusPadded = String.format("%-24s", job.status);
-                    // Strip trailing '&' only for printing out a finished job notification
                     String displayCmd = job.command;
                     if (displayCmd.endsWith(" &")) {
                         displayCmd = displayCmd.substring(0, displayCmd.length() - 2);
@@ -201,7 +199,6 @@ public class Main {
                     }
                     String statusPadded = String.format("%-24s", job.status);
                     
-                    // If a job is reported as Done via the jobs command, strip trailing '&'
                     String displayCmd = job.command;
                     if (job.status.equals("Done") && displayCmd.endsWith(" &")) {
                         displayCmd = displayCmd.substring(0, displayCmd.length() - 2);
@@ -276,12 +273,23 @@ public class Main {
                     
                     if (isBackground) {
                         System.setOut(originalOut);
-                        System.out.println("[" + jobCounter + "] " + process.pid());
+                        
+                        // Recycled job indexing logic
+                        int assignedJobId = 1;
+                        if (!backgroundJobs.isEmpty()) {
+                            int highestId = 0;
+                            for (Job job : backgroundJobs) {
+                                if (job.id > highestId) {
+                                    highestId = job.id;
+                                }
+                            }
+                            assignedJobId = highestId + 1;
+                        }
+
+                        System.out.println("[" + assignedJobId + "] " + process.pid());
                         
                         String reconstructedCmd = String.join(" ", commandArgs) + " &";
-                        backgroundJobs.add(new Job(jobCounter, process.pid(), reconstructedCmd, process));
-                        
-                        jobCounter++;
+                        backgroundJobs.add(new Job(assignedJobId, process.pid(), reconstructedCmd, process));
                     } else {
                         process.waitFor();
                     }
