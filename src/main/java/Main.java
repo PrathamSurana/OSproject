@@ -1,5 +1,3 @@
-package main.java;
-
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,7 +29,6 @@ public class Main {
                 String path = commands[1];
                 File dir;
                 
-                // Handle the home directory shortcut (~), absolute paths, and relative paths
                 if (path.equals("~")) {
                     dir = new File(System.getenv("HOME"));
                 } else if (path.startsWith("/")) {
