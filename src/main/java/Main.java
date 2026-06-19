@@ -6,10 +6,27 @@ import java.util.List;
 import java.util.Scanner;
 
 public class Main {
+    // A helper class to keep track of background processes
+    static class Job {
+        int id;
+        long pid;
+        String command;
+        String status;
+
+        public Job(int id, long pid, String command) {
+            this.id = id;
+            this.pid = pid;
+            this.command = command;
+            this.status = "Running";
+        }
+    }
+
     public static void main(String[] args) throws Exception {
         Scanner scanner = new Scanner(System.in);
         PrintStream originalOut = System.out;
         PrintStream originalErr = System.err;
+        
+        List<Job> backgroundJobs = new ArrayList<>();
         int jobCounter = 1;
 
         while (true) {
@@ -122,7 +139,11 @@ public class Main {
             } else if (command.equals("pwd")) {
                 System.out.println(System.getProperty("user.dir"));
             } else if (command.equals("jobs")) {
-                // Empty implementation for now
+                // List background jobs with specified 24-character padded formatting
+                for (Job job : backgroundJobs) {
+                    String statusPadded = String.format("%-24s", job.status);
+                    System.out.println("[" + job.id + "]+  " + statusPadded + job.command);
+                }
             } else if (command.equals("cd")) {
                 String path = commandArgs.size() > 1 ? commandArgs.get(1) : "~";
                 File dir;
@@ -182,6 +203,11 @@ public class Main {
                     if (isBackground) {
                         System.setOut(originalOut);
                         System.out.println("[" + jobCounter + "] " + process.pid());
+                        
+                        // Re-assemble the raw command string to match output expectations (including trailing &)
+                        String reconstructedCmd = String.join(" ", commandArgs) + " &";
+                        backgroundJobs.add(new Job(jobCounter, process.pid(), reconstructedCmd));
+                        
                         jobCounter++;
                     } else {
                         process.waitFor();
