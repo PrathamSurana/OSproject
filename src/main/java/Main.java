@@ -25,9 +25,17 @@ public class Main {
                 System.out.println(input.substring(5));
             } else if (command.equals("pwd")) {
                 System.out.println(System.getProperty("user.dir"));
+            } else if (command.equals("cd")) {
+                String path = commands[1];
+                File dir = new File(path);
+                if (dir.exists() && dir.isDirectory()) {
+                    System.setProperty("user.dir", dir.getAbsolutePath());
+                } else {
+                    System.out.println("cd: " + path + ": No such file or directory");
+                }
             } else if (command.equals("type")) {
                 String arg = commands[1];
-                if (arg.equals("echo") || arg.equals("exit") || arg.equals("type") || arg.equals("pwd")) {
+                if (arg.equals("echo") || arg.equals("exit") || arg.equals("type") || arg.equals("pwd") || arg.equals("cd")) {
                     System.out.println(arg + " is a shell builtin");
                 } else {
                     String foundPath = getPath(arg);
