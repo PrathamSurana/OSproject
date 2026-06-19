@@ -2,6 +2,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.PrintStream;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Scanner;
 
@@ -11,12 +12,14 @@ public class Main {
         long pid;
         String command;
         String status;
+        Process process;
 
-        public Job(int id, long pid, String command) {
+        public Job(int id, long pid, String command, Process process) {
             this.id = id;
             this.pid = pid;
             this.command = command;
             this.status = "Running";
+            this.process = process;
         }
     }
 
@@ -138,6 +141,17 @@ public class Main {
             } else if (command.equals("pwd")) {
                 System.out.println(System.getProperty("user.dir"));
             } else if (command.equals("jobs")) {
+                // Update live statuses before listing
+                for (Job job : backgroundJobs) {
+                    if (job.status.equals("Running") && !job.process.isAlive()) {
+                        job.status = "Done";
+                        // Done entries omit the trailing "&" signature from their raw layout
+                        if (job.command.endsWith(" &")) {
+                            job.command = job.command.substring(0, job.command.length() - 2);
+                        }
+                    }
+                }
+
                 // List background jobs with correct +, -, and space markers
                 int size = backgroundJobs.size();
                 for (int i = 0; i < size; i++) {
@@ -151,6 +165,15 @@ public class Main {
                     
                     String statusPadded = String.format("%-24s", job.status);
                     System.out.println("[" + job.id + "]" + marker + "  " + statusPadded + job.command);
+                }
+
+                // Clean up finished jobs so subsequent "jobs" queries show nothing
+                Iterator<Job> iterator = backgroundJobs.iterator();
+                while (iterator.hasNext()) {
+                    Job job = iterator.next();
+                    if (job.status.equals("Done")) {
+                        iterator.remove();
+                    }
                 }
             } else if (command.equals("cd")) {
                 String path = commandArgs.size() > 1 ? commandArgs.get(1) : "~";
@@ -213,7 +236,7 @@ public class Main {
                         System.out.println("[" + jobCounter + "] " + process.pid());
                         
                         String reconstructedCmd = String.join(" ", commandArgs) + " &";
-                        backgroundJobs.add(new Job(jobCounter, process.pid(), reconstructedCmd));
+                        backgroundJobs.add(new Job(jobCounter, process.pid(), reconstructedCmd, process));
                         
                         jobCounter++;
                     } else {
