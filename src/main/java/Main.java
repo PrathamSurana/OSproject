@@ -9,9 +9,11 @@ public class Main {
     public static void main(String[] args) throws Exception {
         Scanner scanner = new Scanner(System.in);
         PrintStream originalOut = System.out;
+        PrintStream originalErr = System.err;
 
         while (true) {
             System.setOut(originalOut);
+            System.setErr(originalErr);
             System.out.print("$ ");
             System.out.flush();
 
@@ -25,14 +27,24 @@ public class Main {
                 continue;
             }
 
-            // Extract redirection if present
+            // Extract redirection details if present
             String redirectFile = null;
+            String redirectType = null; // "stdout" or "stderr"
             int redirectIndex = -1;
+
             for (int i = 0; i < parsedArgs.size(); i++) {
                 String arg = parsedArgs.get(i);
                 if (arg.equals(">") || arg.equals("1>")) {
                     if (i + 1 < parsedArgs.size()) {
                         redirectFile = parsedArgs.get(i + 1);
+                        redirectType = "stdout";
+                        redirectIndex = i;
+                        break;
+                    }
+                } else if (arg.equals("2>")) {
+                    if (i + 1 < parsedArgs.size()) {
+                        redirectFile = parsedArgs.get(i + 1);
+                        redirectType = "stderr";
                         redirectIndex = i;
                         break;
                     }
@@ -50,7 +62,7 @@ public class Main {
 
             String command = commandArgs.get(0);
 
-            // Handle redirection setup for builtins
+            // Handle redirection stream setup
             File outFile = null;
             if (redirectFile != null) {
                 outFile = new File(redirectFile);
@@ -58,7 +70,11 @@ public class Main {
                     outFile.getParentFile().mkdirs();
                 }
                 PrintStream fileOut = new PrintStream(new FileOutputStream(outFile, false));
-                System.setOut(fileOut);
+                if (redirectType.equals("stdout")) {
+                    System.setOut(fileOut);
+                } else if (redirectType.equals("stderr")) {
+                    System.setErr(fileOut);
+                }
             }
 
             if (command.equals("exit")) {
@@ -90,7 +106,7 @@ public class Main {
                     System.setProperty("user.dir", dir.getCanonicalPath());
                 } else {
                     System.setOut(originalOut);
-                    System.out.println("cd: " + path + ": No such file or directory");
+                    System.err.println("cd: " + path + ": No such file or directory");
                 }
             } else if (command.equals("type")) {
                 String arg = commandArgs.get(1);
@@ -109,8 +125,13 @@ public class Main {
                 if (executablePath != null) {
                     ProcessBuilder pb = new ProcessBuilder(commandArgs);
                     if (outFile != null) {
-                        pb.redirectOutput(outFile);
-                        pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+                        if (redirectType.equals("stdout")) {
+                            pb.redirectOutput(outFile);
+                            pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+                        } else if (redirectType.equals("stderr")) {
+                            pb.redirectError(outFile);
+                            pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+                        }
                     } else {
                         pb.inheritIO();
                     }
@@ -118,7 +139,7 @@ public class Main {
                     process.waitFor();
                 } else {
                     System.setOut(originalOut);
-                    System.out.println(command + ": command not found");
+                    System.err.println(command + ": command not found");
                 }
             }
         }
