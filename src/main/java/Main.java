@@ -98,7 +98,76 @@ public class Main {
                 continue;
             }
 
-            // Extract redirection details if present
+            // Check if the command contains a pipeline operator '|'
+            int pipeIndex = -1;
+            for (int i = 0; i < parsedArgs.size(); i++) {
+                if (parsedArgs.get(i).equals("|")) {
+                    pipeIndex = i;
+                    break;
+                }
+            }
+
+            if (pipeIndex != -1) {
+                // Pipeline execution route
+                List<String> firstCommandArgs = new ArrayList<>(parsedArgs.subList(0, pipeIndex));
+                List<String> secondCommandArgs = new ArrayList<>(parsedArgs.subList(pipeIndex + 1, parsedArgs.size()));
+
+                if (firstCommandArgs.isEmpty() || secondCommandArgs.isEmpty()) {
+                    continue;
+                }
+
+                String cmd1 = firstCommandArgs.get(0);
+                String cmd2 = secondCommandArgs.get(0);
+
+                String path1 = getPath(cmd1);
+                String path2 = getPath(cmd2);
+
+                if (path1 == null) {
+                    System.err.println(cmd1 + ": command not found");
+                    continue;
+                }
+                if (path2 == null) {
+                    System.err.println(cmd2 + ": command not found");
+                    continue;
+                }
+
+                ProcessBuilder pb1 = new ProcessBuilder(firstCommandArgs);
+                ProcessBuilder pb2 = new ProcessBuilder(secondCommandArgs);
+
+                // Setup the pipeline connection link
+                pb1.redirectInput(ProcessBuilder.Redirect.INHERIT);
+                pb1.redirectError(ProcessBuilder.Redirect.INHERIT);
+                pb2.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+                pb2.redirectError(ProcessBuilder.Redirect.INHERIT);
+
+                // Core logic to link Process 1's stdout directly to Process 2's stdin
+                List<Process> processes = ProcessBuilder.startPipeline(List.of(pb1, pb2));
+
+                if (isBackground) {
+                    int assignedJobId = 1;
+                    if (!backgroundJobs.isEmpty()) {
+                        int highestId = 0;
+                        for (Job job : backgroundJobs) {
+                            if (job.id > highestId) {
+                                highestId = job.id;
+                            }
+                        }
+                        assignedJobId = highestId + 1;
+                    }
+                    // The last process in the pipeline monitors completion status
+                    Process pipelineTail = processes.get(processes.size() - 1);
+                    System.out.println("[" + assignedJobId + "] " + pipelineTail.pid());
+                    String reconstructedCmd = String.join(" ", parsedArgs) + " &";
+                    backgroundJobs.add(new Job(assignedJobId, pipelineTail.pid(), reconstructedCmd, pipelineTail));
+                } else {
+                    for (Process p : processes) {
+                        p.waitFor();
+                    }
+                }
+                continue;
+            }
+
+            // Extract redirection details if present for standard single commands
             String redirectFile = null;
             String redirectType = null;
             boolean append = false;
@@ -181,7 +250,6 @@ public class Main {
             } else if (command.equals("pwd")) {
                 System.out.println(System.getProperty("user.dir"));
             } else if (command.equals("jobs")) {
-                // Refresh status of background processes right when 'jobs' runs
                 for (Job job : backgroundJobs) {
                     if (job.status.equals("Running") && !job.process.isAlive()) {
                         job.status = "Done";
@@ -207,7 +275,6 @@ public class Main {
                     System.out.println("[" + job.id + "]" + marker + "  " + statusPadded + displayCmd);
                 }
 
-                // Clean up finished jobs reported by manual 'jobs' builtin
                 Iterator<Job> manualIter = backgroundJobs.iterator();
                 while (manualIter.hasNext()) {
                     Job job = manualIter.next();
@@ -273,8 +340,6 @@ public class Main {
                     
                     if (isBackground) {
                         System.setOut(originalOut);
-                        
-                        // Recycled job indexing logic
                         int assignedJobId = 1;
                         if (!backgroundJobs.isEmpty()) {
                             int highestId = 0;
@@ -287,7 +352,6 @@ public class Main {
                         }
 
                         System.out.println("[" + assignedJobId + "] " + process.pid());
-                        
                         String reconstructedCmd = String.join(" ", commandArgs) + " &";
                         backgroundJobs.add(new Job(assignedJobId, process.pid(), reconstructedCmd, process));
                     } else {
