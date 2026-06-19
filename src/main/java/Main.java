@@ -35,17 +35,14 @@ public class Main {
             System.setOut(originalOut);
             System.setErr(originalErr);
 
-            // 1. Automatic reaping right before showing the prompt
+            // 1. Check for any finished jobs right before displaying the prompt
             for (Job job : backgroundJobs) {
                 if (job.status.equals("Running") && !job.process.isAlive()) {
                     job.status = "Done";
-                    if (job.command.endsWith(" &")) {
-                        job.command = job.command.substring(0, job.command.length() - 2);
-                    }
                 }
             }
 
-            // Print completed job notifications before displaying the prompt
+            // 2. Print any job that just completed ("Done") before showing the prompt
             int sizeBeforePrompt = backgroundJobs.size();
             for (int i = 0; i < sizeBeforePrompt; i++) {
                 Job job = backgroundJobs.get(i);
@@ -57,11 +54,16 @@ public class Main {
                         marker = "-";
                     }
                     String statusPadded = String.format("%-24s", job.status);
-                    System.out.println("[" + job.id + "]" + marker + "  " + statusPadded + job.command);
+                    // Strip trailing '&' only for printing out a finished job notification
+                    String displayCmd = job.command;
+                    if (displayCmd.endsWith(" &")) {
+                        displayCmd = displayCmd.substring(0, displayCmd.length() - 2);
+                    }
+                    System.out.println("[" + job.id + "]" + marker + "  " + statusPadded + displayCmd);
                 }
             }
 
-            // Clean finished jobs out of the table immediately
+            // 3. Clean finished jobs out of our active background list immediately
             Iterator<Job> iter = backgroundJobs.iterator();
             while (iter.hasNext()) {
                 Job job = iter.next();
@@ -74,6 +76,9 @@ public class Main {
             System.out.print("$ ");
             System.out.flush();
 
+            if (!scanner.hasNextLine()) {
+                break;
+            }
             String input = scanner.nextLine().trim();
             if (input.isEmpty()) {
                 continue;
@@ -97,7 +102,7 @@ public class Main {
 
             // Extract redirection details if present
             String redirectFile = null;
-            String redirectType = null; // "stdout" or "stderr"
+            String redirectType = null;
             boolean append = false;
             int redirectIndex = -1;
 
@@ -178,7 +183,13 @@ public class Main {
             } else if (command.equals("pwd")) {
                 System.out.println(System.getProperty("user.dir"));
             } else if (command.equals("jobs")) {
-                // Fixed typo here: changed [" to "["
+                // Refresh status of background processes right when 'jobs' runs
+                for (Job job : backgroundJobs) {
+                    if (job.status.equals("Running") && !job.process.isAlive()) {
+                        job.status = "Done";
+                    }
+                }
+
                 int currentSize = backgroundJobs.size();
                 for (int i = 0; i < currentSize; i++) {
                     Job job = backgroundJobs.get(i);
@@ -189,7 +200,23 @@ public class Main {
                         marker = "-";
                     }
                     String statusPadded = String.format("%-24s", job.status);
-                    System.out.println("[" + job.id + "]" + marker + "  " + statusPadded + job.command);
+                    
+                    // If a job is reported as Done via the jobs command, strip trailing '&'
+                    String displayCmd = job.command;
+                    if (job.status.equals("Done") && displayCmd.endsWith(" &")) {
+                        displayCmd = displayCmd.substring(0, displayCmd.length() - 2);
+                    }
+                    
+                    System.out.println("[" + job.id + "]" + marker + "  " + statusPadded + displayCmd);
+                }
+
+                // Clean up finished jobs reported by manual 'jobs' builtin
+                Iterator<Job> manualIter = backgroundJobs.iterator();
+                while (manualIter.hasNext()) {
+                    Job job = manualIter.next();
+                    if (job.status.equals("Done")) {
+                        manualIter.remove();
+                    }
                 }
             } else if (command.equals("cd")) {
                 String path = commandArgs.size() > 1 ? commandArgs.get(1) : "~";
