@@ -39,14 +39,14 @@ public class Main {
             System.setErr(originalErr);
             System.setIn(originalIn);
 
-            // 1. Check for any finished jobs right before displaying the prompt
+            // 1. Check for finished background jobs
             for (Job job : backgroundJobs) {
                 if (job.status.equals("Running") && !job.process.isAlive()) {
                     job.status = "Done";
                 }
             }
 
-            // 2. Print any job that just completed ("Done") before showing the prompt
+            // 2. Print completed background jobs before prompt
             int sizeBeforePrompt = backgroundJobs.size();
             for (int i = 0; i < sizeBeforePrompt; i++) {
                 Job job = backgroundJobs.get(i);
@@ -66,7 +66,7 @@ public class Main {
                 }
             }
 
-            // 3. Clean finished jobs out of our active background list immediately
+            // 3. Purge finished jobs
             Iterator<Job> iter = backgroundJobs.iterator();
             while (iter.hasNext()) {
                 Job job = iter.next();
@@ -75,7 +75,6 @@ public class Main {
                 }
             }
 
-            // Display prompt safely
             System.out.print("$ ");
             System.out.flush();
 
@@ -92,7 +91,6 @@ public class Main {
                 continue;
             }
 
-            // Check if it's a background job
             boolean isBackground = false;
             if (parsedArgs.get(parsedArgs.size() - 1).equals("&")) {
                 isBackground = true;
@@ -103,115 +101,109 @@ public class Main {
                 continue;
             }
 
-            // Check if the command contains a pipeline operator '|'
-            int pipeIndex = -1;
-            for (int i = 0; i < parsedArgs.size(); i++) {
-                if (parsedArgs.get(i).equals("|")) {
-                    pipeIndex = i;
+            // Check if pipeline operators are present
+            boolean hasPipe = false;
+            for (String arg : parsedArgs) {
+                if (arg.equals("|")) {
+                    hasPipe = true;
                     break;
                 }
             }
 
-            if (pipeIndex != -1) {
-                List<String> firstCommandArgs = new ArrayList<>(parsedArgs.subList(0, pipeIndex));
-                List<String> secondCommandArgs = new ArrayList<>(parsedArgs.subList(pipeIndex + 1, parsedArgs.size()));
-
-                if (firstCommandArgs.isEmpty() || secondCommandArgs.isEmpty()) {
-                    continue;
+            if (hasPipe) {
+                // Split arguments into multiple separate sub-commands by '|'
+                List<List<String>> pipelineStages = new ArrayList<>();
+                List<String> currentStage = new ArrayList<>();
+                for (String arg : parsedArgs) {
+                    if (arg.equals("|")) {
+                        if (!currentStage.isEmpty()) {
+                            pipelineStages.add(currentStage);
+                            currentStage = new ArrayList<>();
+                        }
+                    } else {
+                        currentStage.add(arg);
+                    }
+                }
+                if (!currentStage.isEmpty()) {
+                    pipelineStages.add(currentStage);
                 }
 
-                String cmd1 = firstCommandArgs.get(0);
-                String cmd2 = secondCommandArgs.get(0);
+                byte[] currentInputData = null;
+                boolean commandFailed = false;
 
-                boolean isCmd1Builtin = isBuiltin(cmd1);
-                boolean isCmd2Builtin = isBuiltin(cmd2);
+                for (int i = 0; i < pipelineStages.size(); i++) {
+                    List<String> stageArgs = pipelineStages.get(i);
+                    String cmd = stageArgs.get(0);
+                    boolean isLast = (i == pipelineStages.size() - 1);
 
-                // If no built-ins are involved, use pure ProcessBuilder pipelines
-                if (!isCmd1Builtin && !isCmd2Builtin) {
-                    String path1 = getPath(cmd1);
-                    String path2 = getPath(cmd2);
-
-                    if (path1 == null) {
-                        System.err.println(cmd1 + ": command not found");
-                        continue;
-                    }
-                    if (path2 == null) {
-                        System.err.println(cmd2 + ": command not found");
-                        continue;
+                    // Setup output capturing if not the last stage
+                    ByteArrayOutputStream stageOutputBuffer = new ByteArrayOutputStream();
+                    if (!isLast) {
+                        System.setOut(new PrintStream(stageOutputBuffer));
+                    } else {
+                        System.setOut(originalOut);
                     }
 
-                    ProcessBuilder pb1 = new ProcessBuilder(firstCommandArgs);
-                    ProcessBuilder pb2 = new ProcessBuilder(secondCommandArgs);
+                    if (isBuiltin(cmd)) {
+                        // Feed input from previous stage into System.in if data exists
+                        if (currentInputData != null) {
+                            System.setIn(new ByteArrayInputStream(currentInputData));
+                        } else {
+                            System.setIn(originalIn);
+                        }
 
-                    pb1.redirectInput(ProcessBuilder.Redirect.INHERIT);
-                    pb1.redirectError(ProcessBuilder.Redirect.INHERIT);
-                    pb2.redirectOutput(ProcessBuilder.Redirect.INHERIT);
-                    pb2.redirectError(ProcessBuilder.Redirect.INHERIT);
+                        executeBuiltin(stageArgs, backgroundJobs, originalOut);
+                        System.out.flush();
+                    } else {
+                        String path = getPath(cmd);
+                        if (path == null) {
+                            System.setOut(originalOut);
+                            System.err.println(cmd + ": command not found");
+                            commandFailed = true;
+                            break;
+                        }
 
-                    List<Process> processes = ProcessBuilder.startPipeline(List.of(pb1, pb2));
-                    if (!isBackground) {
-                        for (Process p : processes) {
+                        ProcessBuilder pb = new ProcessBuilder(stageArgs);
+                        if (isLast) {
+                            pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+                        } else {
+                            pb.redirectOutput(ProcessBuilder.Redirect.PIPE);
+                        }
+                        pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+
+                        if (currentInputData != null) {
+                            pb.redirectInput(ProcessBuilder.Redirect.PIPE);
+                        } else {
+                            pb.redirectInput(ProcessBuilder.Redirect.INHERIT);
+                        }
+
+                        Process p = pb.start();
+
+                        // Write input data from previous pipeline link if applicable
+                        if (currentInputData != null) {
+                            p.getOutputStream().write(currentInputData);
+                            p.getOutputStream().flush();
+                            p.getOutputStream().close();
+                        }
+
+                        if (!isLast) {
+                            p.getInputStream().transferTo(stageOutputBuffer);
+                        }
+
+                        if (!isBackground || isLast) {
                             p.waitFor();
                         }
                     }
-                    continue;
-                }
 
-                // Memory buffer to bridge pipelines involving built-ins
-                ByteArrayOutputStream pipeBuffer = new ByteArrayOutputStream();
-                PrintStream pipeOut = new PrintStream(pipeBuffer);
-                System.setOut(pipeOut);
-
-                // Execute Command 1
-                if (isCmd1Builtin) {
-                    executeBuiltin(firstCommandArgs, backgroundJobs, originalOut);
-                } else {
-                    String path1 = getPath(cmd1);
-                    if (path1 != null) {
-                        ProcessBuilder pb1 = new ProcessBuilder(firstCommandArgs);
-                        pb1.redirectOutput(ProcessBuilder.Redirect.PIPE);
-                        Process p1 = pb1.start();
-                        p1.getInputStream().transferTo(pipeBuffer);
-                        p1.waitFor();
-                    } else {
-                        System.setOut(originalOut);
-                        System.err.println(cmd1 + ": command not found");
-                        continue;
+                    // Save output to become the input for the next command segment
+                    if (!isLast) {
+                        currentInputData = stageOutputBuffer.toByteArray();
                     }
                 }
 
-                pipeOut.flush();
-                byte[] pipeData = pipeBuffer.toByteArray();
-
-                // Reset output stream back to normal
+                // Restore global streams
                 System.setOut(originalOut);
-
-                // Execute Command 2
-                if (isCmd2Builtin) {
-                    // Temporarily feed the captured stream into System.in in case the built-in evaluates stdin
-                    ByteArrayInputStream pipeIn = new ByteArrayInputStream(pipeData);
-                    System.setIn(pipeIn);
-                    
-                    executeBuiltin(secondCommandArgs, backgroundJobs, originalOut);
-                    
-                    System.setIn(originalIn);
-                } else {
-                    String path2 = getPath(cmd2);
-                    if (path2 != null) {
-                        ProcessBuilder pb2 = new ProcessBuilder(secondCommandArgs);
-                        pb2.inheritIO();
-                        pb2.redirectInput(ProcessBuilder.Redirect.PIPE);
-                        Process p2 = pb2.start();
-                        
-                        p2.getOutputStream().write(pipeData);
-                        p2.getOutputStream().flush();
-                        p2.getOutputStream().close();
-                        
-                        p2.waitFor();
-                    } else {
-                        System.err.println(cmd2 + ": command not found");
-                    }
-                }
+                System.setIn(originalIn);
                 continue;
             }
 
