@@ -34,6 +34,43 @@ public class Main {
         while (true) {
             System.setOut(originalOut);
             System.setErr(originalErr);
+
+            // 1. Automatic reaping right before showing the prompt
+            for (Job job : backgroundJobs) {
+                if (job.status.equals("Running") && !job.process.isAlive()) {
+                    job.status = "Done";
+                    if (job.command.endsWith(" &")) {
+                        job.command = job.command.substring(0, job.command.length() - 2);
+                    }
+                }
+            }
+
+            // Print completed job notifications before displaying the prompt
+            int sizeBeforePrompt = backgroundJobs.size();
+            for (int i = 0; i < sizeBeforePrompt; i++) {
+                Job job = backgroundJobs.get(i);
+                if (job.status.equals("Done")) {
+                    String marker = " ";
+                    if (i == sizeBeforePrompt - 1) {
+                        marker = "+";
+                    } else if (i == sizeBeforePrompt - 2) {
+                        marker = "-";
+                    }
+                    String statusPadded = String.format("%-24s", job.status);
+                    System.out.println("[" + job.id + "]" + marker + "  " + statusPadded + job.command);
+                }
+            }
+
+            // Clean finished jobs out of the table immediately
+            Iterator<Job> iter = backgroundJobs.iterator();
+            while (iter.hasNext()) {
+                Job job = iter.next();
+                if (job.status.equals("Done")) {
+                    iter.remove();
+                }
+            }
+
+            // Display prompt safely
             System.out.print("$ ");
             System.out.flush();
 
@@ -141,39 +178,18 @@ public class Main {
             } else if (command.equals("pwd")) {
                 System.out.println(System.getProperty("user.dir"));
             } else if (command.equals("jobs")) {
-                // Update live statuses before listing
-                for (Job job : backgroundJobs) {
-                    if (job.status.equals("Running") && !job.process.isAlive()) {
-                        job.status = "Done";
-                        // Done entries omit the trailing "&" signature from their raw layout
-                        if (job.command.endsWith(" &")) {
-                            job.command = job.command.substring(0, job.command.length() - 2);
-                        }
-                    }
-                }
-
-                // List background jobs with correct +, -, and space markers
-                int size = backgroundJobs.size();
-                for (int i = 0; i < size; i++) {
+                // Manual check remains fully compatible via loop fallback
+                int currentSize = backgroundJobs.size();
+                for (int i = 0; i < currentSize; i++) {
                     Job job = backgroundJobs.get(i);
                     String marker = " ";
-                    if (i == size - 1) {
+                    if (i == currentSize - 1) {
                         marker = "+";
-                    } else if (i == size - 2) {
+                    } else if (i == currentSize - 2) {
                         marker = "-";
                     }
-                    
                     String statusPadded = String.format("%-24s", job.status);
-                    System.out.println("[" + job.id + "]" + marker + "  " + statusPadded + job.command);
-                }
-
-                // Clean up finished jobs so subsequent "jobs" queries show nothing
-                Iterator<Job> iterator = backgroundJobs.iterator();
-                while (iterator.hasNext()) {
-                    Job job = iterator.next();
-                    if (job.status.equals("Done")) {
-                        iterator.remove();
-                    }
+                    System.out.println([" + job.id + "]" + marker + "  " + statusPadded + job.command);
                 }
             } else if (command.equals("cd")) {
                 String path = commandArgs.size() > 1 ? commandArgs.get(1) : "~";
