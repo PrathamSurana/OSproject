@@ -59,6 +59,14 @@ public class Main {
                         redirectIndex = i;
                         break;
                     }
+                } else if (arg.equals("2>>")) {
+                    if (i + 1 < parsedArgs.size()) {
+                        redirectFile = parsedArgs.get(i + 1);
+                        redirectType = "stderr";
+                        append = true;
+                        redirectIndex = i;
+                        break;
+                    }
                 }
             }
 
@@ -144,7 +152,11 @@ public class Main {
                             }
                             pb.redirectError(ProcessBuilder.Redirect.INHERIT);
                         } else if (redirectType.equals("stderr")) {
-                            pb.redirectError(outFile);
+                            if (append) {
+                                pb.redirectError(ProcessBuilder.Redirect.appendTo(outFile));
+                            } else {
+                                pb.redirectError(outFile);
+                            }
                             pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
                         }
                     } else {
