@@ -178,7 +178,7 @@ public class Main {
             } else if (command.equals("pwd")) {
                 System.out.println(System.getProperty("user.dir"));
             } else if (command.equals("jobs")) {
-                // Manual check remains fully compatible via loop fallback
+                // Fixed typo here: changed [" to "["
                 int currentSize = backgroundJobs.size();
                 for (int i = 0; i < currentSize; i++) {
                     Job job = backgroundJobs.get(i);
@@ -189,7 +189,7 @@ public class Main {
                         marker = "-";
                     }
                     String statusPadded = String.format("%-24s", job.status);
-                    System.out.println([" + job.id + "]" + marker + "  " + statusPadded + job.command);
+                    System.out.println("[" + job.id + "]" + marker + "  " + statusPadded + job.command);
                 }
             } else if (command.equals("cd")) {
                 String path = commandArgs.size() > 1 ? commandArgs.get(1) : "~";
