@@ -16,7 +16,6 @@ public class Main {
                 continue;
             }
 
-            // Split input by spaces to separate command from its arguments
             String[] commands = input.split(" ");
             String command = commands[0];
 
@@ -24,9 +23,11 @@ public class Main {
                 break;
             } else if (command.equals("echo")) {
                 System.out.println(input.substring(5));
+            } else if (command.equals("pwd")) {
+                System.out.println(System.getProperty("user.dir"));
             } else if (command.equals("type")) {
                 String arg = commands[1];
-                if (arg.equals("echo") || arg.equals("exit") || arg.equals("type")) {
+                if (arg.equals("echo") || arg.equals("exit") || arg.equals("type") || arg.equals("pwd")) {
                     System.out.println(arg + " is a shell builtin");
                 } else {
                     String foundPath = getPath(arg);
@@ -37,11 +38,9 @@ public class Main {
                     }
                 }
             } else {
-                // Look for an external executable in PATH
                 String executablePath = getPath(command);
                 if (executablePath != null) {
                     List<String> commandList = new ArrayList<>();
-                    // Tip: Pass the raw command name (or full path depending on the tester requirement)
                     commandList.add(command); 
                     for (int i = 1; i < commands.length; i++) {
                         commandList.add(commands[i]);
