@@ -1,3 +1,4 @@
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.PrintStream;
@@ -108,7 +109,6 @@ public class Main {
             }
 
             if (pipeIndex != -1) {
-                // Pipeline execution route
                 List<String> firstCommandArgs = new ArrayList<>(parsedArgs.subList(0, pipeIndex));
                 List<String> secondCommandArgs = new ArrayList<>(parsedArgs.subList(pipeIndex + 1, parsedArgs.size()));
 
@@ -119,49 +119,90 @@ public class Main {
                 String cmd1 = firstCommandArgs.get(0);
                 String cmd2 = secondCommandArgs.get(0);
 
-                String path1 = getPath(cmd1);
-                String path2 = getPath(cmd2);
+                boolean isCmd1Builtin = isBuiltin(cmd1);
+                boolean isCmd2Builtin = isBuiltin(cmd2);
 
-                if (path1 == null) {
-                    System.err.println(cmd1 + ": command not found");
-                    continue;
-                }
-                if (path2 == null) {
-                    System.err.println(cmd2 + ": command not found");
-                    continue;
-                }
+                // If no built-ins are involved, use pure ProcessBuilder pipelines
+                if (!isCmd1Builtin && !isCmd2Builtin) {
+                    String path1 = getPath(cmd1);
+                    String path2 = getPath(cmd2);
 
-                ProcessBuilder pb1 = new ProcessBuilder(firstCommandArgs);
-                ProcessBuilder pb2 = new ProcessBuilder(secondCommandArgs);
-
-                // Setup the pipeline connection link
-                pb1.redirectInput(ProcessBuilder.Redirect.INHERIT);
-                pb1.redirectError(ProcessBuilder.Redirect.INHERIT);
-                pb2.redirectOutput(ProcessBuilder.Redirect.INHERIT);
-                pb2.redirectError(ProcessBuilder.Redirect.INHERIT);
-
-                // Core logic to link Process 1's stdout directly to Process 2's stdin
-                List<Process> processes = ProcessBuilder.startPipeline(List.of(pb1, pb2));
-
-                if (isBackground) {
-                    int assignedJobId = 1;
-                    if (!backgroundJobs.isEmpty()) {
-                        int highestId = 0;
-                        for (Job job : backgroundJobs) {
-                            if (job.id > highestId) {
-                                highestId = job.id;
-                            }
-                        }
-                        assignedJobId = highestId + 1;
+                    if (path1 == null) {
+                        System.err.println(cmd1 + ": command not found");
+                        continue;
                     }
-                    // The last process in the pipeline monitors completion status
-                    Process pipelineTail = processes.get(processes.size() - 1);
-                    System.out.println("[" + assignedJobId + "] " + pipelineTail.pid());
-                    String reconstructedCmd = String.join(" ", parsedArgs) + " &";
-                    backgroundJobs.add(new Job(assignedJobId, pipelineTail.pid(), reconstructedCmd, pipelineTail));
+                    if (path2 == null) {
+                        System.err.println(cmd2 + ": command not found");
+                        continue;
+                    }
+
+                    ProcessBuilder pb1 = new ProcessBuilder(firstCommandArgs);
+                    ProcessBuilder pb2 = new ProcessBuilder(secondCommandArgs);
+
+                    pb1.redirectInput(ProcessBuilder.Redirect.INHERIT);
+                    pb1.redirectError(ProcessBuilder.Redirect.INHERIT);
+                    pb2.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+                    pb2.redirectError(ProcessBuilder.Redirect.INHERIT);
+
+                    List<Process> processes = ProcessBuilder.startPipeline(List.of(pb1, pb2));
+                    if (!isBackground) {
+                        for (Process p : processes) {
+                            p.waitFor();
+                        }
+                    }
+                    continue;
+                }
+
+                // If built-ins are involved, capture first stage output to memory bridge
+                ByteArrayOutputStream pipeBuffer = new ByteArrayOutputStream();
+                PrintStream pipeOut = new PrintStream(pipeBuffer);
+                System.setOut(pipeOut);
+
+                // Execute Command 1
+                if (isCmd1Builtin) {
+                    executeBuiltin(firstCommandArgs, backgroundJobs, originalOut);
                 } else {
-                    for (Process p : processes) {
-                        p.waitFor();
+                    String path1 = getPath(cmd1);
+                    if (path1 != null) {
+                        ProcessBuilder pb1 = new ProcessBuilder(firstCommandArgs);
+                        pb1.redirectOutput(ProcessBuilder.Redirect.PIPE);
+                        Process p1 = pb1.start();
+                        p1.getInputStream().transferTo(pipeBuffer);
+                        p1.waitFor();
+                    } else {
+                        System.setOut(originalOut);
+                        System.err.println(cmd1 + ": command not found");
+                        continue;
+                    }
+                }
+
+                pipeOut.flush();
+                byte[] pipeData = pipeBuffer.toByteArray();
+
+                // Reset System output back to normal before executing command 2
+                System.setOut(originalOut);
+
+                // Execute Command 2
+                if (isCmd2Builtin) {
+                    // Inject captured input directly into a custom runner loop if needed, 
+                    // or handle built-ins that process stdin (like type reading input, etc.)
+                    // For the test "ls | type exit", type ignores stdin and just looks at args.
+                    executeBuiltin(secondCommandArgs, backgroundJobs, originalOut);
+                } else {
+                    String path2 = getPath(cmd2);
+                    if (path2 != null) {
+                        ProcessBuilder pb2 = new ProcessBuilder(secondCommandArgs);
+                        pb2.inheritIO();
+                        pb2.redirectInput(ProcessBuilder.Redirect.PIPE);
+                        Process p2 = pb2.start();
+                        
+                        p2.getOutputStream().write(pipeData);
+                        p2.getOutputStream().flush();
+                        p2.getOutputStream().close();
+                        
+                        p2.waitFor();
+                    } else {
+                        System.err.println(cmd2 + ": command not found");
                     }
                 }
                 continue;
@@ -236,82 +277,11 @@ public class Main {
                 }
             }
 
-            if (command.equals("exit")) {
-                break;
-            } else if (command.equals("echo")) {
-                StringBuilder sb = new StringBuilder();
-                for (int i = 1; i < commandArgs.size(); i++) {
-                    sb.append(commandArgs.get(i));
-                    if (i < commandArgs.size() - 1) {
-                        sb.append(" ");
-                    }
+            if (isBuiltin(command)) {
+                if (command.equals("exit")) {
+                    break;
                 }
-                System.out.println(sb.toString());
-            } else if (command.equals("pwd")) {
-                System.out.println(System.getProperty("user.dir"));
-            } else if (command.equals("jobs")) {
-                for (Job job : backgroundJobs) {
-                    if (job.status.equals("Running") && !job.process.isAlive()) {
-                        job.status = "Done";
-                    }
-                }
-
-                int currentSize = backgroundJobs.size();
-                for (int i = 0; i < currentSize; i++) {
-                    Job job = backgroundJobs.get(i);
-                    String marker = " ";
-                    if (i == currentSize - 1) {
-                        marker = "+";
-                    } else if (i == currentSize - 2) {
-                        marker = "-";
-                    }
-                    String statusPadded = String.format("%-24s", job.status);
-                    
-                    String displayCmd = job.command;
-                    if (job.status.equals("Done") && displayCmd.endsWith(" &")) {
-                        displayCmd = displayCmd.substring(0, displayCmd.length() - 2);
-                    }
-                    
-                    System.out.println("[" + job.id + "]" + marker + "  " + statusPadded + displayCmd);
-                }
-
-                Iterator<Job> manualIter = backgroundJobs.iterator();
-                while (manualIter.hasNext()) {
-                    Job job = manualIter.next();
-                    if (job.status.equals("Done")) {
-                        manualIter.remove();
-                    }
-                }
-            } else if (command.equals("cd")) {
-                String path = commandArgs.size() > 1 ? commandArgs.get(1) : "~";
-                File dir;
-                
-                if (path.equals("~")) {
-                    dir = new File(System.getenv("HOME"));
-                } else if (path.startsWith("/")) {
-                    dir = new File(path);
-                } else {
-                    dir = new File(System.getProperty("user.dir"), path);
-                }
-
-                if (dir.exists() && dir.isDirectory()) {
-                    System.setProperty("user.dir", dir.getCanonicalPath());
-                } else {
-                    System.setOut(originalOut);
-                    System.err.println("cd: " + path + ": No such file or directory");
-                }
-            } else if (command.equals("type")) {
-                String arg = commandArgs.get(1);
-                if (arg.equals("echo") || arg.equals("exit") || arg.equals("type") || arg.equals("pwd") || arg.equals("cd") || arg.equals("jobs")) {
-                    System.out.println(arg + " is a shell builtin");
-                } else {
-                    String foundPath = getPath(arg);
-                    if (foundPath != null) {
-                        System.out.println(arg + " is " + foundPath);
-                    } else {
-                        System.out.println(arg + ": not found");
-                    }
-                }
+                executeBuiltin(commandArgs, backgroundJobs, originalOut);
             } else {
                 String executablePath = getPath(command);
                 if (executablePath != null) {
@@ -360,6 +330,90 @@ public class Main {
                 } else {
                     System.setOut(originalOut);
                     System.err.println(command + ": command not found");
+                }
+            }
+        }
+    }
+
+    private static boolean isBuiltin(String command) {
+        return command.equals("echo") || command.equals("exit") || command.equals("type") || command.equals("pwd") || command.equals("cd") || command.equals("jobs");
+    }
+
+    private static void executeBuiltin(List<String> commandArgs, List<Job> backgroundJobs, PrintStream originalOut) throws Exception {
+        String command = commandArgs.get(0);
+        if (command.equals("echo")) {
+            StringBuilder sb = new StringBuilder();
+            for (int i = 1; i < commandArgs.size(); i++) {
+                sb.append(commandArgs.get(i));
+                if (i < commandArgs.size() - 1) {
+                    sb.append(" ");
+                }
+            }
+            System.out.println(sb.toString());
+        } else if (command.equals("pwd")) {
+            System.out.println(System.getProperty("user.dir"));
+        } else if (command.equals("jobs")) {
+            for (Job job : backgroundJobs) {
+                if (job.status.equals("Running") && !job.process.isAlive()) {
+                    job.status = "Done";
+                }
+            }
+
+            int currentSize = backgroundJobs.size();
+            for (int i = 0; i < currentSize; i++) {
+                Job job = backgroundJobs.get(i);
+                String marker = " ";
+                if (i == currentSize - 1) {
+                    marker = "+";
+                } else if (i == currentSize - 2) {
+                    marker = "-";
+                }
+                String statusPadded = String.format("%-24s", job.status);
+                
+                String displayCmd = job.command;
+                if (job.status.equals("Done") && displayCmd.endsWith(" &")) {
+                    displayCmd = displayCmd.substring(0, displayCmd.length() - 2);
+                }
+                
+                System.out.println("[" + job.id + "]" + marker + "  " + statusPadded + displayCmd);
+            }
+
+            Iterator<Job> manualIter = backgroundJobs.iterator();
+            while (manualIter.hasNext()) {
+                Job job = manualIter.next();
+                if (job.status.equals("Done")) {
+                    manualIter.remove();
+                }
+            }
+        } else if (command.equals("cd")) {
+            String path = commandArgs.size() > 1 ? commandArgs.get(1) : "~";
+            File dir;
+            
+            if (path.equals("~")) {
+                dir = new File(System.getenv("HOME"));
+            } else if (path.startsWith("/")) {
+                dir = new File(path);
+                dir = new File(System.getProperty("user.dir"), path);
+            }
+
+            if (dir.exists() && dir.isDirectory()) {
+                System.setProperty("user.dir", dir.getCanonicalPath());
+            } else {
+                PrintStream currentOut = System.out;
+                System.setOut(originalOut);
+                System.err.println("cd: " + path + ": No such file or directory");
+                System.setOut(currentOut);
+            }
+        } else if (command.equals("type")) {
+            String arg = commandArgs.get(1);
+            if (isBuiltin(arg)) {
+                System.out.println(arg + " is a shell builtin");
+            } else {
+                String foundPath = getPath(arg);
+                if (foundPath != null) {
+                    System.out.println(arg + " is " + foundPath);
+                } else {
+                    System.out.println(arg + ": not found");
                 }
             }
         }
