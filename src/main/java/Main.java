@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.Scanner;
 
 public class Main {
-    // A helper class to keep track of background processes
     static class Job {
         int id;
         long pid;
@@ -139,10 +138,19 @@ public class Main {
             } else if (command.equals("pwd")) {
                 System.out.println(System.getProperty("user.dir"));
             } else if (command.equals("jobs")) {
-                // List background jobs with specified 24-character padded formatting
-                for (Job job : backgroundJobs) {
+                // List background jobs with correct +, -, and space markers
+                int size = backgroundJobs.size();
+                for (int i = 0; i < size; i++) {
+                    Job job = backgroundJobs.get(i);
+                    String marker = " ";
+                    if (i == size - 1) {
+                        marker = "+";
+                    } else if (i == size - 2) {
+                        marker = "-";
+                    }
+                    
                     String statusPadded = String.format("%-24s", job.status);
-                    System.out.println("[" + job.id + "]+  " + statusPadded + job.command);
+                    System.out.println("[" + job.id + "]" + marker + "  " + statusPadded + job.command);
                 }
             } else if (command.equals("cd")) {
                 String path = commandArgs.size() > 1 ? commandArgs.get(1) : "~";
@@ -204,7 +212,6 @@ public class Main {
                         System.setOut(originalOut);
                         System.out.println("[" + jobCounter + "] " + process.pid());
                         
-                        // Re-assemble the raw command string to match output expectations (including trailing &)
                         String reconstructedCmd = String.join(" ", commandArgs) + " &";
                         backgroundJobs.add(new Job(jobCounter, process.pid(), reconstructedCmd));
                         
