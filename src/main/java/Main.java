@@ -30,6 +30,7 @@ public class Main {
             // Extract redirection details if present
             String redirectFile = null;
             String redirectType = null; // "stdout" or "stderr"
+            boolean append = false;
             int redirectIndex = -1;
 
             for (int i = 0; i < parsedArgs.size(); i++) {
@@ -38,6 +39,15 @@ public class Main {
                     if (i + 1 < parsedArgs.size()) {
                         redirectFile = parsedArgs.get(i + 1);
                         redirectType = "stdout";
+                        append = false;
+                        redirectIndex = i;
+                        break;
+                    }
+                } else if (arg.equals(">>") || arg.equals("1>>")) {
+                    if (i + 1 < parsedArgs.size()) {
+                        redirectFile = parsedArgs.get(i + 1);
+                        redirectType = "stdout";
+                        append = true;
                         redirectIndex = i;
                         break;
                     }
@@ -45,6 +55,7 @@ public class Main {
                     if (i + 1 < parsedArgs.size()) {
                         redirectFile = parsedArgs.get(i + 1);
                         redirectType = "stderr";
+                        append = false;
                         redirectIndex = i;
                         break;
                     }
@@ -69,7 +80,7 @@ public class Main {
                 if (outFile.getParentFile() != null) {
                     outFile.getParentFile().mkdirs();
                 }
-                PrintStream fileOut = new PrintStream(new FileOutputStream(outFile, false));
+                PrintStream fileOut = new PrintStream(new FileOutputStream(outFile, append));
                 if (redirectType.equals("stdout")) {
                     System.setOut(fileOut);
                 } else if (redirectType.equals("stderr")) {
@@ -126,7 +137,11 @@ public class Main {
                     ProcessBuilder pb = new ProcessBuilder(commandArgs);
                     if (outFile != null) {
                         if (redirectType.equals("stdout")) {
-                            pb.redirectOutput(outFile);
+                            if (append) {
+                                pb.redirectOutput(ProcessBuilder.Redirect.appendTo(outFile));
+                            } else {
+                                pb.redirectOutput(outFile);
+                            }
                             pb.redirectError(ProcessBuilder.Redirect.INHERIT);
                         } else if (redirectType.equals("stderr")) {
                             pb.redirectError(outFile);
