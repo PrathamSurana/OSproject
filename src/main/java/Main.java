@@ -1,3 +1,5 @@
+package main.java;
+
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,14 +31,15 @@ public class Main {
                 String path = commands[1];
                 File dir;
                 
-                // If it's an absolute path, handle it directly. Otherwise, resolve relative to current user.dir
-                if (path.startsWith("/")) {
+                // Handle the home directory shortcut (~), absolute paths, and relative paths
+                if (path.equals("~")) {
+                    dir = new File(System.getenv("HOME"));
+                } else if (path.startsWith("/")) {
                     dir = new File(path);
                 } else {
                     dir = new File(System.getProperty("user.dir"), path);
                 }
 
-                // Canonical path automatically resolves "." and ".." components cleanly
                 if (dir.exists() && dir.isDirectory()) {
                     System.setProperty("user.dir", dir.getCanonicalPath());
                 } else {
