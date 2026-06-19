@@ -27,9 +27,18 @@ public class Main {
                 System.out.println(System.getProperty("user.dir"));
             } else if (command.equals("cd")) {
                 String path = commands[1];
-                File dir = new File(path);
+                File dir;
+                
+                // If it's an absolute path, handle it directly. Otherwise, resolve relative to current user.dir
+                if (path.startsWith("/")) {
+                    dir = new File(path);
+                } else {
+                    dir = new File(System.getProperty("user.dir"), path);
+                }
+
+                // Canonical path automatically resolves "." and ".." components cleanly
                 if (dir.exists() && dir.isDirectory()) {
-                    System.setProperty("user.dir", dir.getAbsolutePath());
+                    System.setProperty("user.dir", dir.getCanonicalPath());
                 } else {
                     System.out.println("cd: " + path + ": No such file or directory");
                 }
