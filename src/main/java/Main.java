@@ -184,9 +184,6 @@ public class Main {
 
                 // Execute Command 2
                 if (isCmd2Builtin) {
-                    // Inject captured input directly into a custom runner loop if needed, 
-                    // or handle built-ins that process stdin (like type reading input, etc.)
-                    // For the test "ls | type exit", type ignores stdin and just looks at args.
                     executeBuiltin(secondCommandArgs, backgroundJobs, originalOut);
                 } else {
                     String path2 = getPath(cmd2);
@@ -389,10 +386,12 @@ public class Main {
             String path = commandArgs.size() > 1 ? commandArgs.get(1) : "~";
             File dir;
             
+            // Fixed variable initialization paths here
             if (path.equals("~")) {
                 dir = new File(System.getenv("HOME"));
             } else if (path.startsWith("/")) {
                 dir = new File(path);
+            } else {
                 dir = new File(System.getProperty("user.dir"), path);
             }
 
