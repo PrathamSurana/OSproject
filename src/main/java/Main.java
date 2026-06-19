@@ -109,6 +109,8 @@ public class Main {
                 System.out.println(sb.toString());
             } else if (command.equals("pwd")) {
                 System.out.println(System.getProperty("user.dir"));
+            } else if (command.equals("jobs")) {
+                // Register jobs builtin with an empty implementation for now
             } else if (command.equals("cd")) {
                 String path = commandArgs.size() > 1 ? commandArgs.get(1) : "~";
                 File dir;
@@ -129,7 +131,7 @@ public class Main {
                 }
             } else if (command.equals("type")) {
                 String arg = commandArgs.get(1);
-                if (arg.equals("echo") || arg.equals("exit") || arg.equals("type") || arg.equals("pwd") || arg.equals("cd")) {
+                if (arg.equals("echo") || arg.equals("exit") || arg.equals("type") || arg.equals("pwd") || arg.equals("cd") || arg.equals("jobs")) {
                     System.out.println(arg + " is a shell builtin");
                 } else {
                     String foundPath = getPath(arg);
